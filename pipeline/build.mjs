@@ -25,8 +25,9 @@ const F = 0.5, INTRO_PAD = 1.4, OUTRO_PAD = 2.0;
 const PRE = 'highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=15:release=120:makeup=1'; // makeup is LINEAR
 const LIMIT = '0.891'; // alimiter limit is LINEAR amplitude (~ -1 dBFS); level=false stops auto-renormalization
 
-async function ff(args, label) { process.stdout.write(`  ffmpeg ${label} ... `); await exec('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...args]); console.log('ok'); }
-async function probeSec(f) { const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]); return parseFloat(stdout.trim()); }
+const FF_TIMEOUT = Number(process.env.ANTZOKI_FF_TIMEOUT || 1800000); // 30 min backstop for 4K encodes; turns a stuck ffmpeg into a clear failure
+async function ff(args, label) { process.stdout.write(`  ffmpeg ${label} ... `); await exec('ffmpeg', ['-nostdin', '-y', '-hide_banner', '-loglevel', 'error', ...args], { timeout: FF_TIMEOUT }); console.log('ok'); }
+async function probeSec(f) { const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], { timeout: FF_TIMEOUT }); return parseFloat(stdout.trim()); }
 const wav = (id) => path.join(TTS, `${id}.wav`);
 
 async function buildCard(name, dur, W, H, VENC, fadeIn, fadeOut) {
@@ -61,7 +62,7 @@ async function buildNarrDry(bodyScenes, bodyStartMs, outroStartMs) {
 
 async function masterAudio(I, TP) {
   const dry = path.join(OUT, 'narr_dry.wav');
-  const { stderr } = await exec('ffmpeg', ['-hide_banner', '-i', dry, '-af', `${PRE},loudnorm=I=${I}:TP=${TP}:LRA=11:print_format=json`, '-f', 'null', '-']);
+  const { stderr } = await exec('ffmpeg', ['-nostdin', '-hide_banner', '-i', dry, '-af', `${PRE},loudnorm=I=${I}:TP=${TP}:LRA=11:print_format=json`, '-f', 'null', '-'], { timeout: FF_TIMEOUT });
   const m = JSON.parse(stderr.slice(stderr.lastIndexOf('{'), stderr.lastIndexOf('}') + 1));
   const ln = `loudnorm=I=${I}:TP=${TP}:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`;
   await ff(['-i', dry, '-af', `${PRE},${ln},alimiter=limit=${LIMIT}:level=false`, '-ar', '48000', '-ac', '2', path.join(OUT, 'narr_master.wav')], `master audio (measured ${m.input_i} -> ${I} LUFS)`);
@@ -79,7 +80,7 @@ async function buildProgramAudio(programDur, I, TP, music) {
     const premix = path.join(OUT, 'premix.wav');
     const fc = `[1:a]asplit=2[sc][vo];[0:a][sc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400:detection=rms[dk];[dk][vo]amix=inputs=2:normalize=0[out]`;
     await ff(['-i', path.join(OUT, 'bed.wav'), '-i', master, '-filter_complex', fc, '-map', '[out]', '-ar', '48000', '-ac', '2', premix], 'duck + mix music');
-    const { stderr } = await exec('ffmpeg', ['-hide_banner', '-i', premix, '-af', `loudnorm=I=${I}:TP=${TP}:LRA=11:print_format=json`, '-f', 'null', '-']);
+    const { stderr } = await exec('ffmpeg', ['-nostdin', '-hide_banner', '-i', premix, '-af', `loudnorm=I=${I}:TP=${TP}:LRA=11:print_format=json`, '-f', 'null', '-'], { timeout: FF_TIMEOUT });
     const m = JSON.parse(stderr.slice(stderr.lastIndexOf('{'), stderr.lastIndexOf('}') + 1));
     const gain = gainToTargetDb(parseFloat(m.input_i), I);
     await ff(['-i', premix, '-af', `volume=${gain}dB,alimiter=limit=${LIMIT}:level=false`, '-ar', '48000', '-ac', '2', out], `re-anchor ${m.input_i} -> ${I} LUFS (${gain}dB)`);
@@ -91,6 +92,10 @@ async function buildProgramAudio(programDur, I, TP, music) {
 async function main() {
   const demo = JSON.parse(await readFile(DEMO_PATH, 'utf8'));
   if (!existsSync(path.join(RAW, 'body.webm'))) throw new Error('missing out/raw/body.webm — run record.mjs first');
+  const cardIds = (demo.scenes || []).filter((s) => s.kind === 'card').map((s) => s.id);
+  for (const id of ['intro', 'outro']) {
+    if (!existsSync(wav(id))) throw new Error(`build expects a card scene with id "${id}" (its narration ${path.basename(wav(id))} is missing). Card scene ids present: [${cardIds.join(', ') || 'none'}]. Name the first and last card scenes "intro" and "outro".`);
+  }
   const tl = JSON.parse(await readFile(path.join(OUT, 'timeline.json'), 'utf8'));
 
   const W = demo.video?.width || 3840, H = demo.video?.height || 2160;

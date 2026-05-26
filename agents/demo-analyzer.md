@@ -1,7 +1,7 @@
 ---
 name: demo-analyzer
 description: Studies a web application (a codebase path or a running URL) and drafts a demo.json storyboard plus narration for the antzoki demo-video pipeline. Use to plan a demo from real selectors and real features, not guesses.
-tools: Read, Grep, Glob, Bash
+tools: Read, Write, Grep, Glob, Bash
 model: sonnet
 ---
 

@@ -29,10 +29,10 @@ const TTS = path.join(OUT, 'tts');
 const DIAG = path.join(OUT, 'diag');
 const ARTROOT = path.join(OUT, 'artifacts');
 const ART_PORT = Number(process.env.ART_PORT || 8091);
-const ART_BASE = `http://127.0.0.1:${ART_PORT}`;
 const HEADFUL = process.env.HEADLESS ? false : true;
+const EXEC_TIMEOUT = Number(process.env.ANTZOKI_EXEC_TIMEOUT || 120000);
 
-function startArtServer() {
+function startArtServer(startPort) {
   const srv = http.createServer(async (req, res) => {
     try {
       const rel = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
@@ -45,8 +45,53 @@ function startArtServer() {
       res.end(buf);
     } catch { res.statusCode = 404; res.end(); }
   });
-  return new Promise((r) => srv.listen(ART_PORT, '127.0.0.1', () => r(srv)));
+  // Bind, but if the port is taken (a stale run or another tool), walk forward a
+  // few ports instead of hanging forever on an unhandled listen error.
+  return new Promise((resolve, reject) => {
+    let port = startPort;
+    srv.on('error', (e) => {
+      if (e.code === 'EADDRINUSE' && port < startPort + 20) srv.listen(++port, '127.0.0.1');
+      else reject(e);
+    });
+    srv.listen(port, '127.0.0.1', () => resolve({ srv, port }));
+  });
 }
+
+// Fail fast with an actionable message if a required external tool is missing,
+// rather than dying with a cryptic ENOENT deep in a scene. pdftocairo is only
+// needed when the storyboard actually shows a PDF or image asset.
+async function ensureTools(scenes) {
+  const needPdf = (scenes || []).some((s) => (s.steps || []).some((st) => st.do === 'showAsset'));
+  const checks = [
+    ['ffmpeg', ['-version'], 'install ffmpeg (e.g. brew install ffmpeg)'],
+    ['ffprobe', ['-version'], 'install ffmpeg (e.g. brew install ffmpeg)'],
+  ];
+  if (needPdf) checks.push(['pdftocairo', ['-v'], 'install poppler (e.g. brew install poppler)']);
+  for (const [bin, args, hint] of checks) {
+    try { await exec(bin, args, { timeout: 10000 }); }
+    catch { throw new Error(`required tool "${bin}" is missing or not runnable — ${hint}`); }
+  }
+}
+
+// Enumerate connected displays and their native pixel resolutions (macOS), so
+// capture can be sized to a resolution the screen can actually back rather than
+// requesting a surface larger than the display.
+async function detectDisplays() {
+  try {
+    const { stdout } = await exec('system_profiler', ['SPDisplaysDataType', '-json'], { timeout: 15000 });
+    const root = JSON.parse(stdout);
+    const out = [];
+    for (const gpu of root.SPDisplaysDataType || []) {
+      for (const d of gpu.spdisplays_ndrvs || []) {
+        const res = d._spdisplays_pixels || d._spdisplays_resolution || '';
+        const m = String(res).match(/(\d{3,5})\s*x\s*(\d{3,5})/);
+        if (m) out.push({ name: d._name || 'display', w: +m[1], h: +m[2], main: d.spdisplays_main === 'spdisplays_yes' });
+      }
+    }
+    return out;
+  } catch { return []; }
+}
+const even = (n) => Math.max(2, Math.round(n / 2) * 2); // h264 needs even dims
 
 async function main() {
   const demo = JSON.parse(await readFile(DEMO_PATH, 'utf8'));
@@ -56,9 +101,8 @@ async function main() {
   const APP = process.env.APP_URL || demo.app.url;
   const NAV_BG = demo.app.navBg || '#0a0e1a';
   const HIDE = demo.app.hideSelectors || [];
-  const vp = demo.video?.viewport || { width: 1920, height: 1080 };
-  const scale = demo.video?.scale || 2;
-  const recSize = { width: demo.video?.width || vp.width * scale, height: demo.video?.height || vp.height * scale };
+  const baseVp = demo.video?.viewport || { width: 1920, height: 1080 };
+  const maxScale = demo.video?.scale || 2;
   const TAIL_PAD_MS = demo.tailPadMs ?? 800;
   const accent = demo.brand?.accent || '#c8a24a';
 
@@ -68,10 +112,43 @@ async function main() {
   await rm(path.join(RAW, 'body.webm'), { force: true }).catch(() => {});
 
   log('Preflight:');
-  try { const r = await fetch(APP); log(`  app ${APP}: ${r.status}`); }
+  await ensureTools(demo.scenes);
+  let reachable = false;
+  try { const r = await fetch(APP); reachable = true; log(`  app ${APP}: ${r.status}`); }
   catch (e) { log(`  app ${APP}: UNREACHABLE (${e.message})`); }
-  const artSrv = await startArtServer();
+  if (!reachable && !process.env.ANTZOKI_SKIP_PREFLIGHT) {
+    throw new Error(`app at ${APP} is unreachable. Start it first (or set APP_URL), or set ANTZOKI_SKIP_PREFLIGHT=1 to record anyway.`);
+  }
+  const { srv: artSrv, port: artPort } = await startArtServer(ART_PORT);
+  const ART_BASE = `http://127.0.0.1:${artPort}`;
   log(`  artifact viewer server on ${ART_BASE}`);
+
+  // Size capture to what the screen can back. The headful window stays small, but
+  // the page renders at viewport x deviceScaleFactor; keep the desktop-width
+  // viewport and raise the scale for sharpness up to the demo's target, capped so
+  // the surface fits the largest display (a surface larger than the screen can be
+  // clamped, leaving the 4K frame partly blank). Off any display (headless CI) we
+  // use the demo's target. Set ANTZOKI_NO_FIT=1 to force the demo target.
+  const displays = await detectDisplays();
+  let scale = maxScale;
+  if (displays.length && !process.env.ANTZOKI_NO_FIT) {
+    const big = displays.reduce((a, b) => (b.w * b.h > a.w * a.h ? b : a));
+    log(`  displays: ${displays.map((d) => `${d.name} ${d.w}x${d.h}${d.main ? ' main' : ''}`).join(' | ')}`);
+    const fit = Math.min(maxScale, big.w / baseVp.width, big.h / baseVp.height);
+    scale = Math.max(1, Math.floor(fit * 20) / 20);
+  } else {
+    log(`  displays: ${displays.length ? 'detected (fit disabled)' : 'none detected'}; using demo target scale ${maxScale}`);
+  }
+  let vp = { ...baseVp };
+  let recSize = { width: even(vp.width * scale), height: even(vp.height * scale) };
+  if (!HEADFUL && scale > 1) {
+    // Headless video capture ignores deviceScaleFactor, so render natively at the
+    // capture size with dsf 1 to fill the frame; headful composites off-screen.
+    vp = { width: recSize.width, height: recSize.height };
+    scale = 1;
+    log(`  headless: rendering natively at ${recSize.width}x${recSize.height} (dsf 1) to fill the frame`);
+  }
+  log(`  capture: ${recSize.width}x${recSize.height} (viewport ${vp.width}x${vp.height} @ ${(recSize.width / vp.width).toFixed(2)}x, ${HEADFUL ? 'headful' : 'headless'})`);
 
   const scenes = demo.scenes;
   log(`TTS: synthesizing ${scenes.length} clips...`);
@@ -136,7 +213,7 @@ async function main() {
   }
   const istr = (s) => interpolate(s, vars);
 
-  async function softNav(url, waitUntil = 'networkidle') {
+  async function softNav(url, waitUntil = 'load') {
     await page.evaluate((bg) => new Promise((res) => {
       const o = document.createElement('div'); o.id = '__navfade';
       o.style.cssText = `position:fixed;inset:0;z-index:2147483646;background:${bg};opacity:0;transition:opacity .28s ease`;
@@ -144,7 +221,7 @@ async function main() {
       requestAnimationFrame(() => { o.style.opacity = '1'; });
       setTimeout(res, 300);
     }, NAV_BG)).catch(() => {});
-    await page.goto(url, { waitUntil }).catch(() => {});
+    await page.goto(url, { waitUntil }).catch((e) => log(`  (softNav ${url} did not settle: ${e.message.split('\n')[0]})`));
     await page.evaluate((bg) => new Promise((res) => {
       const o = document.createElement('div'); o.id = '__navfade';
       o.style.cssText = `position:fixed;inset:0;z-index:2147483646;background:${bg};opacity:1;transition:opacity .4s ease`;
@@ -179,7 +256,7 @@ async function main() {
     let imgs;
     if (ct.includes('pdf') || href.toLowerCase().endsWith('.pdf')) {
       await writeFile(path.join(dir, 'src.pdf'), buf);
-      await exec('pdftocairo', ['-png', '-r', String(st.dpi || 200), path.join(dir, 'src.pdf'), path.join(dir, 'page')]);
+      await exec('pdftocairo', ['-png', '-r', String(st.dpi || 200), path.join(dir, 'src.pdf'), path.join(dir, 'page')], { timeout: EXEC_TIMEOUT });
       imgs = (await readdir(dir)).filter((f) => /^page.*\.png$/.test(f))
         .sort((a, b) => (parseInt(a.match(/\d+/)) || 0) - (parseInt(b.match(/\d+/)) || 0));
     } else {
@@ -235,9 +312,9 @@ body{display:flex;flex-direction:column;align-items:center;gap:30px;padding:64px
 
   async function dispatch(st) {
     switch (st.do) {
-      case 'goto': return page.goto(istr(st.url), { waitUntil: st.waitUntil || 'networkidle' });
-      case 'softNav': return softNav(istr(st.url), st.waitUntil || 'networkidle');
-      case 'reload': return page.reload({ waitUntil: st.waitUntil || 'networkidle' });
+      case 'goto': return page.goto(istr(st.url), { waitUntil: st.waitUntil || 'load' });
+      case 'softNav': return softNav(istr(st.url), st.waitUntil || 'load');
+      case 'reload': return page.reload({ waitUntil: st.waitUntil || 'load' });
       case 'clearStorage': return page.evaluate(() => { try { localStorage.clear(); sessionStorage.clear(); } catch {} });
       case 'click': return loc(st).click({ timeout: st.timeout });
       case 'fill': return loc(st).fill(istr(String(st.value)), { timeout: st.timeout });

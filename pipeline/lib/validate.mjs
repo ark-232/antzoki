@@ -35,7 +35,10 @@ export function validateDemo(demo) {
       if (st.do === 'fill' && st.value == null) errors.push(`${w2}: fill requires a value`);
       if (st.do === 'press' && !st.key) errors.push(`${w2}: press requires a key`);
       if ((st.do === 'goto' || st.do === 'softNav') && !st.url) errors.push(`${w2}: ${st.do} requires a url`);
-      if (st.do === 'waitForUrl' && !st.pattern) errors.push(`${w2}: waitForUrl requires a pattern`);
+      if (st.do === 'waitForUrl') {
+        if (!st.pattern) errors.push(`${w2}: waitForUrl requires a pattern`);
+        else { try { new RegExp(st.pattern); } catch (e) { errors.push(`${w2}: waitForUrl pattern is not a valid regex (${e.message})`); } }
+      }
       if (st.do === 'generate' && (!st.trigger || !st.done)) errors.push(`${w2}: generate requires trigger and done locators`);
       if (st.do === 'showAsset' && !st.href && !st.url) errors.push(`${w2}: showAsset requires href or url`);
     });

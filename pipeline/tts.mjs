@@ -12,6 +12,11 @@ import path from 'node:path';
 
 const exec = promisify(execFile);
 
+// Subprocess backstop: a flaky or stuck say|ffmpeg|ffprobe must fail loudly, not
+// hang the whole pipeline forever (it did, on the first real run). Clips are
+// cached by content hash, so a re-run resumes without re-spending work.
+const EXEC_TIMEOUT = Number(process.env.ANTZOKI_TTS_TIMEOUT || 120000);
+
 // A neutral, documentary register read. style:0 is the biggest lever against a
 // salesy delivery; stability mid-high flattens upspeak without going robotic.
 const DEFAULT_SETTINGS = { stability: 0.55, similarity_boost: 0.8, style: 0.0, use_speaker_boost: true, speed: 0.98 };
@@ -47,7 +52,7 @@ export function keyFor(cfg, text, prev, next) {
 }
 
 async function probeMs(wav) {
-  const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', wav]);
+  const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', wav], { timeout: EXEC_TIMEOUT });
   return Math.round(parseFloat(stdout.trim()) * 1000);
 }
 
@@ -66,7 +71,7 @@ async function elevenlabs(cfg, text, mp3Path, prev, next) {
 }
 
 async function sayMac(cfg, text, aiffPath) {
-  await exec('say', ['-v', cfg.sayVoice, '-r', '178', '-o', aiffPath, text]);
+  await exec('say', ['-v', cfg.sayVoice, '-r', '178', '-o', aiffPath, text], { timeout: EXEC_TIMEOUT });
 }
 
 // text -> { wavPath, durationMs }. RAW 48k stereo wav (no normalization).
@@ -85,7 +90,7 @@ export async function synthesize(cfg, text, outDir, id, prev = '', next = '') {
   const tmp = path.join(outDir, `${id}.${p === 'elevenlabs' ? 'mp3' : 'aiff'}`);
   if (p === 'elevenlabs') await elevenlabs(cfg, text, tmp, prev, next);
   else await sayMac(cfg, text, tmp);
-  await exec('ffmpeg', ['-y', '-i', tmp, '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', wavPath]);
+  await exec('ffmpeg', ['-nostdin', '-y', '-i', tmp, '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s16le', wavPath], { timeout: EXEC_TIMEOUT });
   const durationMs = await probeMs(wavPath);
   await writeFile(metaPath, JSON.stringify({ hash, provider: p, durationMs, chars: text.length }, null, 2));
   return { wavPath, durationMs, provider: p, cached: false };

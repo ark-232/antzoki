@@ -34,3 +34,14 @@ test('rejects a click with no locator', () => {
   const r = validateDemo({ app: { url: 'x' }, scenes: [{ id: 'a', text: 't', steps: [{ do: 'click' }] }] });
   assert.equal(r.ok, false);
 });
+
+test('accepts a valid waitForUrl pattern', () => {
+  const r = validateDemo({ app: { url: 'x' }, scenes: [{ id: 'a', text: 't', steps: [{ do: 'waitForUrl', pattern: '/reports/[a-z0-9-]+' }] }] });
+  assert.ok(r.ok, 'errors:\n - ' + r.errors.join('\n - '));
+});
+
+test('rejects an invalid waitForUrl regex', () => {
+  const r = validateDemo({ app: { url: 'x' }, scenes: [{ id: 'a', text: 't', steps: [{ do: 'waitForUrl', pattern: '(' }] }] });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => /not a valid regex/.test(e)));
+});
