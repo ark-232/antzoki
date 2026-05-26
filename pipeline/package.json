@@ -1,0 +1,17 @@
+{
+  "name": "antzoki-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Storyboard-driven demo-video pipeline: Playwright recording, ElevenLabs narration, ffmpeg compositing.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test",
+    "record": "node record.mjs",
+    "build": "node build.mjs",
+    "audition": "node voice-audition.mjs"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

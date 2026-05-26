@@ -1,0 +1,10 @@
+{
+  "name": "antzoki",
+  "description": "Point Claude Code at a web app and get a narrated 4K demo video. It analyzes the project, interviews you, generates a storyboard and script, then records with Playwright, narrates with ElevenLabs, and composites with ffmpeg.",
+  "version": "0.1.0",
+  "author": { "name": "ark-232" },
+  "homepage": "https://github.com/ark-232/antzoki",
+  "repository": { "type": "git", "url": "https://github.com/ark-232/antzoki.git" },
+  "license": "MIT",
+  "keywords": ["demo", "demo-video", "screencast", "playwright", "elevenlabs", "ffmpeg", "narration", "product-tour"]
+}

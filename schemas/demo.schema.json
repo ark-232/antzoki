@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ark-232/antzoki/schemas/demo.schema.json",
+  "title": "Antzoki demo specification",
+  "type": "object",
+  "required": ["app", "scenes"],
+  "additionalProperties": true,
+  "properties": {
+    "project": { "type": "string", "description": "Slug used to name the output file." },
+    "app": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "description": "Base URL of the running app." },
+        "navBg": { "type": "string", "description": "Dark color used for soft-navigation fades.", "default": "#0a0e1a" },
+        "hideSelectors": { "type": "array", "items": { "type": "string" }, "description": "CSS selectors hidden during capture (debug panels, banners)." }
+      }
+    },
+    "video": {
+      "type": "object",
+      "properties": {
+        "viewport": { "type": "object", "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } } },
+        "scale": { "type": "number", "default": 2, "description": "deviceScaleFactor; viewport x scale is the capture buffer." },
+        "width": { "type": "integer", "default": 3840 },
+        "height": { "type": "integer", "default": 2160 },
+        "fps": { "type": "integer", "default": 30 }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "lufs": { "type": "number", "default": -14, "description": "Integrated loudness target." },
+        "tp": { "type": "number", "default": -1.0, "description": "True-peak ceiling (dBTP)." }
+      }
+    },
+    "music": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "prompt": { "type": "string", "description": "ElevenLabs Music prompt for the instrumental bed." }
+      }
+    },
+    "tailPadMs": { "type": "integer", "default": 800, "description": "Hold after each scene's narration ends." },
+    "voice": {
+      "type": "object",
+      "description": "TTS overrides; otherwise environment and defaults apply.",
+      "properties": {
+        "voice": { "type": "string" },
+        "model": { "type": "string", "default": "eleven_multilingual_v2" },
+        "seed": { "type": "integer" },
+        "settings": { "type": "object" }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "description": "Copy and accent for the intro and outro title cards.",
+      "properties": {
+        "accent": { "type": "string", "default": "#c8a24a" },
+        "kicker": { "type": "string" },
+        "beta": { "type": "string" },
+        "intro": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "subtitle": { "type": "string" },
+            "arch": { "type": "string", "description": "Optional inline HTML line." },
+            "stats": { "type": "array", "items": { "type": "object", "properties": { "n": { "type": "string" }, "l": { "type": "string" } } } }
+          }
+        },
+        "outro": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "subtitle": { "type": "string" },
+            "footer": { "type": "string" },
+            "pocs": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "role": { "type": "string" }, "base": { "type": "string" } } } }
+          }
+        }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["card"], "description": "Cards are rendered title screens with no steps." },
+          "text": { "type": "string", "description": "Narration line for this scene." },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["do"],
+              "properties": {
+                "do": {
+                  "type": "string",
+                  "enum": ["goto", "softNav", "reload", "clearStorage", "click", "fill", "check", "uncheck", "hover", "press", "scroll", "wait", "waitFor", "waitForUrl", "waitForResponse", "expectVisible", "captureUrlId", "captureHref", "generate", "showAsset"]
+                },
+                "optional": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

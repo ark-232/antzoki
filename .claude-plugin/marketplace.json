@@ -1,0 +1,15 @@
+{
+  "name": "antzoki",
+  "owner": { "name": "ark-232" },
+  "metadata": {
+    "description": "Antzoki: an automated narrated demo-video director for web apps, native to Claude Code.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "antzoki",
+      "source": "./",
+      "description": "Analyze a web app, interview the developer, and produce a narrated 4K demo video (Playwright + ElevenLabs + ffmpeg)."
+    }
+  ]
+}

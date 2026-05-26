@@ -1,0 +1,101 @@
+{
+  "project": "example",
+  "app": {
+    "url": "http://localhost:3000",
+    "navBg": "#0b1020",
+    "hideSelectors": []
+  },
+  "video": { "viewport": { "width": 1920, "height": 1080 }, "scale": 2, "width": 3840, "height": 2160, "fps": 30 },
+  "audio": { "lufs": -14, "tp": -1.0 },
+  "music": { "enabled": true },
+  "tailPadMs": 800,
+  "brand": {
+    "accent": "#6aa3ff",
+    "kicker": "A TEMPLATE DEMO",
+    "beta": "EXAMPLE BUILD",
+    "intro": {
+      "title": "Acme Analytics",
+      "subtitle": "Turn raw events into shareable reports",
+      "stats": [
+        { "n": "1 CLICK", "l": "Report generation" },
+        { "n": "PDF", "l": "Publication-ready export" },
+        { "n": "LIVE", "l": "Streaming dashboards" }
+      ]
+    },
+    "outro": {
+      "title": "Explore. Build. Share.",
+      "subtitle": "Everything you saw runs in the browser.",
+      "footer": "Acme Analytics"
+    }
+  },
+  "scenes": [
+    {
+      "id": "intro",
+      "kind": "card",
+      "text": "Acme Analytics turns a stream of raw events into clean, shareable reports. This is a short walkthrough of the core flow, from a new report to a finished export."
+    },
+    {
+      "id": "landing",
+      "text": "We start on the dashboard and create a new report. Everything runs in the browser, so there is nothing to install.",
+      "steps": [
+        { "do": "goto", "url": "/" },
+        { "do": "clearStorage" },
+        { "do": "reload" },
+        { "do": "click", "role": "button", "name": "New report" },
+        { "do": "waitForUrl", "pattern": "/reports/[a-z0-9-]+", "captureId": "id", "timeout": 8000 }
+      ]
+    },
+    {
+      "id": "configure",
+      "text": "We give the report a title and choose a time window. The form is the only input the tool needs to get started.",
+      "steps": [
+        { "do": "fill", "role": "textbox", "name": "Title", "value": "Q3 Launch Recap" },
+        { "do": "click", "role": "button", "name": "Last 30 days" }
+      ]
+    },
+    {
+      "id": "generate",
+      "text": "This is the core of the product. From that small amount of input, it assembles a complete report and renders it to a finished document. You can watch it build.",
+      "steps": [
+        { "do": "generate",
+          "trigger": { "role": "button", "name": "Generate report" },
+          "started": { "role": "button", "name": "Regenerate" },
+          "done": { "role": "link", "name": "Open PDF" },
+          "captureHref": "reportHref" }
+      ]
+    },
+    {
+      "id": "showReport",
+      "text": "Here is the finished report, opened just as a stakeholder would receive it. It reads like a real document, with a cover, sections, and charts, not a rough draft.",
+      "steps": [
+        { "do": "showAsset", "href": "${reportHref}", "id": "report" }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "text": "The live dashboard shows the same data updating in real time. Charts stream in as new events arrive, so the picture is always current.",
+      "steps": [
+        { "do": "softNav", "url": "/reports/${id}/dashboard" },
+        { "do": "waitFor", "selector": "canvas", "timeout": 12000 },
+        { "do": "wait", "ms": 2000 },
+        { "do": "scroll", "ms": 4000 }
+      ]
+    },
+    {
+      "id": "share",
+      "text": "Sharing is one step. We send the report to a teammate by email, and they get the same interactive view we just built.",
+      "steps": [
+        { "do": "softNav", "url": "/reports/${id}" },
+        { "do": "click", "role": "button", "name": "Share" },
+        { "do": "fill", "role": "textbox", "name": "Email", "value": "teammate@acme.test" },
+        { "do": "click", "role": "button", "name": "Send" },
+        { "do": "wait", "ms": 1500 }
+      ]
+    },
+    {
+      "id": "outro",
+      "kind": "card",
+      "text": "Create a report, render it to a polished document, watch it live, and share it in one step. That is the core of Acme Analytics."
+    }
+  ]
+}
