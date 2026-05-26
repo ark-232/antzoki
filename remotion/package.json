@@ -1,0 +1,22 @@
+{
+  "name": "antzoki-remotion-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Additive proof-of-concept: render antzoki demo intro cards + synced captions with Remotion. Does NOT touch antzoki's default ffmpeg pipeline.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "node render.mjs",
+    "render:greyline": "node render.mjs ../examples/greyline/demo.json ../examples/greyline/out/timeline.json"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.467",
+    "@remotion/cli": "4.0.467",
+    "@remotion/renderer": "4.0.467",
+    "@remotion/transitions": "4.0.467",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "remotion": "4.0.467"
+  }
+}
